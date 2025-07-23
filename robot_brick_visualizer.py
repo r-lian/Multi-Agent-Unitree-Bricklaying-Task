@@ -315,7 +315,7 @@ class RobotBrickVisualizer(Node):
                     
                     # Plan path to brick
                     path = self.path_planner.find_path(robot.location, closest_brick.location, robot.robot_id)
-                    if path and self.path_planner.reserve_path(robot.robot_id, path, 10.0):
+                    if path and self.path_planner.reserve_path(robot.robot_id, path):
                         closest_brick.state = BrickState.RESERVED
                         robot.target_brick = closest_brick
                         robot.current_path = path
@@ -344,7 +344,7 @@ class RobotBrickVisualizer(Node):
                             
                         # Plan path to target
                         path = self.path_planner.find_path(robot.location, selected_target.location, robot.robot_id)
-                        if path and self.path_planner.reserve_path(robot.robot_id, path, 10.0):
+                        if path and self.path_planner.reserve_path(robot.robot_id, path):
                             robot.target_location = selected_target
                             robot.current_path = path
                             robot.path_index = 0

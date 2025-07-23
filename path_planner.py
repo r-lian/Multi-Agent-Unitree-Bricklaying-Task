@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 Multi-Robot Path Planning Module
 
@@ -63,8 +63,14 @@ class PathPlanner:
         # Static obstacles (can be extended for environment obstacles)
         self.static_obstacles: Set[Tuple[int, int]] = set()
         
-        # Robot safety radius in grid cells - reduced for less conservative planning
-        self.robot_radius_cells = max(1, int(0.15 / grid_size))  # 15cm safety radius (reduced from 30cm)
+        # Robot safety radius in grid cells - adaptive based on robot density
+        self.base_robot_radius = 0.15  # 15cm base radius
+        self.robot_radius_cells = max(1, int(self.base_robot_radius / grid_size))
+        
+        # Scalability optimizations
+        self.spatial_index: Dict[Tuple[int, int], Set[int]] = {}  # Cell -> robot_ids for faster lookup
+        self.last_cleanup_time = time.time()
+        self.cleanup_interval = 5.0  # Clean up expired paths every 5 seconds
         
     def world_to_grid(self, x: float, y: float) -> Tuple[int, int]:
         """Convert world coordinates to grid coordinates"""
@@ -80,6 +86,73 @@ class PathPlanner:
         x = (grid_x + 0.5) * self.grid_size
         y = (grid_y + 0.5) * self.grid_size
         return x, y
+    
+    def update_spatial_index(self):
+        """Update spatial index for faster collision checking"""
+        self.spatial_index.clear()
+        current_time = time.time()
+        
+        for robot_id, reserved_path in self.reserved_paths.items():
+            # Skip expired paths
+            if current_time > reserved_path.start_time + reserved_path.duration:
+                continue
+                
+            # Add robot to spatial index for each cell it occupies
+            for cell in reserved_path.cells:
+                if cell not in self.spatial_index:
+                    self.spatial_index[cell] = set()
+                self.spatial_index[cell].add(robot_id)
+    
+    def cleanup_expired_paths(self):
+        """Remove expired path reservations"""
+        current_time = time.time()
+        
+        # Only cleanup periodically to avoid overhead
+        if current_time - self.last_cleanup_time < self.cleanup_interval:
+            return
+            
+        expired_robots = []
+        for robot_id, reserved_path in self.reserved_paths.items():
+            if current_time > reserved_path.start_time + reserved_path.duration:
+                expired_robots.append(robot_id)
+        
+        for robot_id in expired_robots:
+            del self.reserved_paths[robot_id]
+            
+        self.last_cleanup_time = current_time
+        self.update_spatial_index()
+    
+    def calculate_adaptive_radius(self, num_robots: int) -> int:
+        """Calculate adaptive robot radius based on robot density"""
+        # Reduce radius as robot count increases to prevent gridlock
+        if num_robots <= 5:
+            radius_scale = 1.0
+        elif num_robots <= 15:
+            radius_scale = 0.8
+        elif num_robots <= 30:
+            radius_scale = 0.6
+        else:  # 30+ robots
+            radius_scale = 0.4
+            
+        adaptive_radius = self.base_robot_radius * radius_scale
+        return max(1, int(adaptive_radius / self.grid_size))
+    
+    def calculate_adaptive_duration(self, num_robots: int, path_length: int) -> float:
+        """Calculate adaptive reservation duration based on robot density and path length"""
+        # Base duration scales with path length
+        base_duration = max(3.0, path_length * 0.5)  # 0.5 seconds per waypoint
+        
+        # Reduce duration as robot count increases
+        if num_robots <= 5:
+            duration_scale = 1.0
+        elif num_robots <= 15:
+            duration_scale = 0.7
+        elif num_robots <= 30:
+            duration_scale = 0.5
+        else:  # 30+ robots
+            duration_scale = 0.3
+            
+        return base_duration * duration_scale
     
     def heuristic(self, node: PathNode, goal: PathNode) -> float:
         """Calculate heuristic distance (Euclidean)"""
@@ -117,41 +190,48 @@ class PathPlanner:
                         start_time: float, duration: float) -> bool:
         """
         Check if a grid cell is occupied by another robot's reserved path
-        
-        Args:
-            grid_x, grid_y: Grid coordinates to check
-            robot_id: ID of the robot requesting the path
-            start_time: When the robot would occupy this cell
-            duration: How long the robot would occupy this cell
+        Uses spatial index for O(1) lookup instead of O(N) iteration
         """
         # Check static obstacles
         if (grid_x, grid_y) in self.static_obstacles:
             return True
         
-        # Check reserved paths from other robots
-        current_time = time.time()
-        for other_robot_id, reserved_path in self.reserved_paths.items():
+        # Cleanup expired paths periodically
+        self.cleanup_expired_paths()
+        
+        # Use spatial index for faster lookup
+        cell = (grid_x, grid_y)
+        if cell not in self.spatial_index:
+            return False  # No robots occupy this cell
+        
+        # Check temporal conflicts only with robots that occupy this cell
+        for other_robot_id in self.spatial_index[cell]:
             if other_robot_id == robot_id:
                 continue  # Don't check against own path
-            
-            # Check if the reserved path is still active
-            if current_time > reserved_path.start_time + reserved_path.duration:
-                continue  # Path has expired
-            
-            # Check for spatial-temporal conflict
-            if (grid_x, grid_y) in reserved_path.cells:
-                # Check for temporal overlap - be more lenient with timing
-                other_start = reserved_path.start_time
-                other_end = reserved_path.start_time + reserved_path.duration
-                our_start = start_time
-                our_end = start_time + duration
                 
-                # Add buffer time to reduce conflicts
-                buffer_time = 0.5  # 0.5 second buffer
+            if other_robot_id not in self.reserved_paths:
+                continue  # Path may have been cleaned up
                 
-                # Check if time intervals overlap (with buffer)
-                if not (our_end + buffer_time <= other_start or our_start >= other_end + buffer_time):
-                    return True  # Temporal conflict
+            reserved_path = self.reserved_paths[other_robot_id]
+            
+            # Check for temporal overlap with reduced buffer for high density
+            other_start = reserved_path.start_time
+            other_end = reserved_path.start_time + reserved_path.duration
+            our_start = start_time
+            our_end = start_time + duration
+            
+            # Adaptive buffer time based on robot density
+            num_robots = len(self.reserved_paths)
+            if num_robots <= 5:
+                buffer_time = 0.5
+            elif num_robots <= 15:
+                buffer_time = 0.3
+            else:
+                buffer_time = 0.1  # Minimal buffer for high density
+            
+            # Check if time intervals overlap (with buffer)
+            if not (our_end + buffer_time <= other_start or our_start >= other_end + buffer_time):
+                return True  # Temporal conflict
         
         return False
     
@@ -176,7 +256,7 @@ class PathPlanner:
     
     def find_path(self, start: Location, goal: Location, robot_id: int) -> Optional[List[Location]]:
         """
-        Find a path from start to goal using A* algorithm with collision avoidance
+        Find a path from start to goal using A* algorithm with adaptive collision avoidance
         
         Args:
             start: Starting location
@@ -186,12 +266,16 @@ class PathPlanner:
         Returns:
             List of waypoints if path found, None otherwise
         """
+        # Update adaptive parameters based on current robot density
+        num_robots = len(self.reserved_paths)
+        self.robot_radius_cells = self.calculate_adaptive_radius(num_robots)
+        
         # First, try to find a path with collision avoidance
         path = self._find_path_with_avoidance(start, goal, robot_id)
         
         # If no path found with collision avoidance, try without (emergency fallback)
         if not path:
-            print(f"Robot {robot_id}: No path with collision avoidance, trying fallback...")
+            print(f"Robot {robot_id}: No path with collision avoidance (density: {num_robots}), trying fallback...")
             path = self._find_path_without_avoidance(start, goal)
         
         return path
@@ -335,20 +419,25 @@ class PathPlanner:
         
         return None  # No path found
     
-    def reserve_path(self, robot_id: int, path: List[Location], duration: float) -> bool:
+    def reserve_path(self, robot_id: int, path: List[Location], duration: Optional[float] = None) -> bool:
         """
-        Reserve a path for a robot
+        Reserve a path for a robot with adaptive duration
         
         Args:
             robot_id: ID of the robot
             path: Path to reserve
-            duration: How long to reserve the path (seconds)
+            duration: How long to reserve the path (seconds), if None uses adaptive calculation
             
         Returns:
             True if reservation successful, False otherwise
         """
         if not path:
             return False
+        
+        # Use adaptive duration if not specified
+        if duration is None:
+            num_robots = len(self.reserved_paths)
+            duration = self.calculate_adaptive_duration(num_robots, len(path))
         
         start_time = time.time()
         cells = self.calculate_path_cells(path)
@@ -368,7 +457,8 @@ class PathPlanner:
         )
         
         self.reserved_paths[robot_id] = reserved_path
-        print(f"Robot {robot_id}: Reserved path with {len(path)} waypoints for {duration}s")
+        self.update_spatial_index()  # Update spatial index for faster collision checking
+        print(f"Robot {robot_id}: Reserved path with {len(path)} waypoints for {duration:.1f}s")
         return True
     
     def clear_expired_reservations(self):
