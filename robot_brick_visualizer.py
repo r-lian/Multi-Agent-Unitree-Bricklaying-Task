@@ -40,6 +40,17 @@ class RobotBrickVisualizer(Node):
         self.completion_announced = False
         self.simulation_running = True
         self.input_thread_active = False
+        self.robots_can_start = False  # Robots wait until target input is complete
+        self.ordered_target_filling = True  # Fill targets in the order they were added
+        
+        # Terminal control system
+        self.system_paused = False
+        self.shutdown_requested = False
+        self.persistent_mode = True  # Run indefinitely until shutdown
+        
+        # Configurable entity quantities
+        self.default_num_robots = 3
+        self.default_num_bricks = 5
         
         # Initialize the simulation
         self.reset_simulation()
@@ -58,41 +69,54 @@ class RobotBrickVisualizer(Node):
         # Reset completion tracking
         self.task_completed = False
         self.completion_announced = False
+        self.robots_can_start = False  # Reset robot activation flag
+        self.system_paused = False  # Reset pause state
         
         # Clear any existing markers from previous runs
         self.clear_all_markers()
         
-        # Create 3 robots with random positions
-        for robot_id in range(1, 4):
+        # Create configurable number of robots with random positions
+        for robot_id in range(1, self.default_num_robots + 1):
             robot_loc = self.random_location()
             robot = Robot(robot_id=robot_id, location=robot_loc, state=RobotState.IDLE)
             robot.state_start_time = time.time()
             self.robots.append(robot)
         
-        # Create initial unplaced bricks
-        num_bricks = 5
-        for i in range(num_bricks):
+        # Create configurable number of initial unplaced bricks
+        for i in range(self.default_num_bricks):
             brick_loc = self.random_location()
             brick = Brick(brick_id=i+1, location=brick_loc, state=BrickState.UNGRABBED)
             self.unplaced_bricks.append(brick)
         
-        # Create targets for stacking
-        num_targets = 3
-        for i in range(num_targets):
-            target_loc = self.random_location()
-            target = Target(target_id=i+1, location=target_loc, state=TargetState.PENDING)
-            self.targets.append(target)
-            self.target_brick_counts[i+1] = 0
-        
-        print("=== Multi-Robot Bricklaying System ===")
+        # Start with NO targets - user must add them manually
+        print("=== Multi-Robot Bricklaying System (Persistent Mode) ===")
         print(f"🤖 {len(self.robots)} robots initialized")
         print(f"🧱 {len(self.unplaced_bricks)} bricks to place")
         print(f"🎯 {len(self.targets)} target locations")
-        print("🚀 Robots will coordinate paths to avoid collisions and complete the task!")
+        print()
+        print("🎮 TERMINAL CONTROL COMMANDS:")
+        print("   📍 add_target x,y,z     - Add target location")
+        print("   🧱 add_brick x,y,z      - Add unplaced brick")
+        print("   🤖 add_robot x,y,z      - Add new robot")
+        print("   ❌ remove_target ID     - Remove target by ID")
+        print("   ❌ remove_brick ID      - Remove brick by ID")
+        print("   ❌ remove_robot ID      - Remove robot by ID")
+        print("   🎲 spawn_robots N       - Spawn N robots randomly")
+        print("   🎲 spawn_bricks N       - Spawn N bricks randomly")
+        print("   🗑️  clear_all           - Remove all entities")
+        print("   ⚙️  set_defaults N,M    - Set default robots,bricks (e.g., 5,10)")
+        print("   ▶️  start               - Start/resume robot operation")
+        print("   ⏸️  pause               - Pause robot operation")
+        print("   🛑 shutdown             - Exit system")
+        print("   🔄 order                - Toggle target filling mode")
+        print("   ❓ help                 - Show this help")
+        print("   📊 status               - Show system status")
+        print(f"🎯 Target filling mode: {'ORDERED (first-added first)' if self.ordered_target_filling else 'CLOSEST (distance-based)'}")
+        print()
         
-        # Start input thread for manual commands
+        # Start terminal control thread
         self.input_thread_active = True
-        threading.Thread(target=self.input_thread, daemon=True).start()
+        threading.Thread(target=self.terminal_control_thread, daemon=False).start()
 
     def check_task_completion(self):
         """Check if all bricks have been placed and announce completion"""
@@ -117,12 +141,18 @@ class RobotBrickVisualizer(Node):
             for target_id, count in self.target_brick_counts.items():
                 print(f"   Target {target_id}: {count} bricks")
             
-            # Stop the manual input thread
-            self.input_thread_active = False
-            
-            # Start input thread to ask for restart
-            input_thread = threading.Thread(target=self.completion_input_thread, daemon=True)
-            input_thread.start()
+            # In persistent mode, just announce completion and continue running
+            if self.persistent_mode:
+                print(f"🎮 System continues running. Add more bricks/targets to start new tasks.")
+                print(f"   Use 'help' to see available commands.")
+                # Reset task completion state to allow future completions
+                self.task_completed = False
+                self.completion_announced = False
+            else:
+                # Legacy mode - stop and ask for restart
+                self.input_thread_active = False
+                input_thread = threading.Thread(target=self.completion_input_thread, daemon=True)
+                input_thread.start()
             
     def completion_input_thread(self):
         """Handle user input for restarting simulation"""
@@ -135,6 +165,8 @@ class RobotBrickVisualizer(Node):
                 
                 if response in ['y', 'yes']:
                     print("🚀 Starting new simulation...")
+                    print("   New robots and bricks will be spawned.")
+                    print("   You'll need to add target locations manually again.")
                     self.reset_simulation()
                     break
                 elif response in ['n', 'no']:
@@ -195,6 +227,33 @@ class RobotBrickVisualizer(Node):
     def distance(self, loc1, loc2):
         return ((loc1.x - loc2.x)**2 + (loc1.y - loc2.y)**2 + (loc1.z - loc2.z)**2)**0.5
 
+    def get_robot_color(self, robot_id):
+        """Generate a unique color for each robot ID using HSV color space"""
+        import colorsys
+        
+        # Use HSV color space to generate evenly spaced colors
+        # This ensures good color separation for any number of robots
+        hue = ((robot_id - 1) * 0.618034) % 1.0  # Golden ratio for good spacing
+        saturation = 0.8
+        value = 1.0
+        
+        # Convert HSV to RGB
+        rgb = colorsys.hsv_to_rgb(hue, saturation, value)
+        return rgb
+
+    def select_target(self, robot_location, available_targets):
+        """Select target based on ordering preference"""
+        if not available_targets:
+            return None
+            
+        if self.ordered_target_filling:
+            # Return the first target in the list (oldest added)
+            return available_targets[0]
+        else:
+            # Return closest target by distance
+            distances = [self.distance(robot_location, target.location) for target in available_targets]
+            return available_targets[distances.index(min(distances))]
+
     def update_fsm(self):
         """Update FSM for all robots with path planning and coordination"""
         current_time = time.time()
@@ -240,6 +299,10 @@ class RobotBrickVisualizer(Node):
         
         # FSM state transitions
         if robot.state == RobotState.IDLE:
+            # Only start working if robots are allowed to start and system is not paused
+            if not self.robots_can_start or self.system_paused:
+                return
+                
             # Check if there are targets and bricks available
             with self.target_lock:
                 available_targets = [t for t in self.targets if t.state == TargetState.PENDING]
@@ -271,22 +334,23 @@ class RobotBrickVisualizer(Node):
                 self.unplaced_bricks.remove(robot.target_brick)
                 print(f"Robot {robot.robot_id} grabbed brick {robot.target_brick.brick_id}")
                 
-                # Find closest target
+                # Select target based on ordering preference
                 with self.target_lock:
                     available_targets = [t for t in self.targets if t.state == TargetState.PENDING]
                     if available_targets:
-                        distances = [self.distance(robot.location, target.location) for target in available_targets]
-                        closest_target = available_targets[distances.index(min(distances))]
-                        
+                        selected_target = self.select_target(robot.location, available_targets)
+                        if not selected_target:
+                            return
+                            
                         # Plan path to target
-                        path = self.path_planner.find_path(robot.location, closest_target.location, robot.robot_id)
+                        path = self.path_planner.find_path(robot.location, selected_target.location, robot.robot_id)
                         if path and self.path_planner.reserve_path(robot.robot_id, path, 10.0):
-                            robot.target_location = closest_target
+                            robot.target_location = selected_target
                             robot.current_path = path
                             robot.path_index = 0
                             robot.state = RobotState.MOVING_TO_TARGET
                             robot.state_start_time = current_time
-                            print(f"Robot {robot.robot_id} planning path to target {closest_target.target_id}")
+                            print(f"Robot {robot.robot_id} planning path to target {selected_target.target_id}")
                         else:
                             robot.state = RobotState.WAITING
                             robot.state_start_time = current_time
@@ -328,24 +392,451 @@ class RobotBrickVisualizer(Node):
                 robot.state = RobotState.IDLE
                 robot.state_start_time = current_time
 
-    def input_thread(self):
-        while self.input_thread_active and self.simulation_running:
+    def terminal_control_thread(self):
+        """Handle real-time terminal commands for system control"""
+        print("🎮 Terminal control ready - type 'help' for commands...")
+        
+        while self.input_thread_active and self.simulation_running and not self.shutdown_requested:
             try:
-                user_input = input("Enter target x,y,z (or 'q' to quit input): ").strip()
-                if user_input.lower() == 'q':
-                    print("Input thread exiting.")
-                    self.input_thread_active = False
+                user_input = input("🎮 Command: ").strip()
+                parts = user_input.split()
+                
+                if not parts:
+                    continue
+                    
+                command = parts[0].lower()
+                
+                if command == 'help':
+                    self.show_help()
+                elif command == 'status':
+                    self.show_status()
+                elif command == 'start':
+                    self.handle_start()
+                elif command == 'pause':
+                    self.handle_pause()
+                elif command == 'shutdown':
+                    self.handle_shutdown()
                     break
-                x, y, z = map(float, user_input.split(','))
-                with self.target_lock:
-                    target_id = len(self.targets) + 1
-                    target_loc = Location(x, y, z)
-                    target = Target(target_id=target_id, location=target_loc, state=TargetState.PENDING)
-                    self.targets.append(target)
-                print(f"Added target {target_id} at: ({x}, {y}, {z})")
+                elif command == 'order':
+                    self.handle_order_toggle()
+                elif command == 'add_target':
+                    self.handle_add_target(parts[1:])
+                elif command == 'add_brick':
+                    self.handle_add_brick(parts[1:])
+                elif command == 'add_robot':
+                    self.handle_add_robot(parts[1:])
+                elif command == 'remove_target':
+                    self.handle_remove_target(parts[1:])
+                elif command == 'remove_brick':
+                    self.handle_remove_brick(parts[1:])
+                elif command == 'remove_robot':
+                    self.handle_remove_robot(parts[1:])
+                elif command == 'spawn_robots':
+                    self.handle_spawn_robots(parts[1:])
+                elif command == 'spawn_bricks':
+                    self.handle_spawn_bricks(parts[1:])
+                elif command == 'clear_all':
+                    self.handle_clear_all()
+                elif command == 'set_defaults':
+                    self.handle_set_defaults(parts[1:])
+                else:
+                    print(f"❌ Unknown command: {command}. Type 'help' for available commands.")
+                    
+            except (EOFError, KeyboardInterrupt):
+                print("\n🛑 Terminal control interrupted. Shutting down...")
+                self.handle_shutdown()
+                break
             except Exception as e:
-                print(f"Invalid input: {e}")
-        print("Manual input thread stopped.")
+                print(f"❌ Error processing command: {e}")
+                
+        print("🛑 Terminal control stopped.")
+
+    # Command handler methods
+    def show_help(self):
+        """Display all available commands"""
+        print("\n🎮 AVAILABLE COMMANDS:")
+        print("   📍 add_target x,y,z     - Add target location")
+        print("   🧱 add_brick x,y,z      - Add unplaced brick") 
+        print("   🤖 add_robot x,y,z      - Add new robot")
+        print("   ❌ remove_target ID     - Remove target by ID")
+        print("   ❌ remove_brick ID      - Remove brick by ID")
+        print("   ❌ remove_robot ID      - Remove robot by ID")
+        print("   🎲 spawn_robots N       - Spawn N robots randomly")
+        print("   🎲 spawn_bricks N       - Spawn N bricks randomly")
+        print("   🗑️  clear_all           - Remove all entities")
+        print("   ⚙️  set_defaults N,M    - Set default robots,bricks (e.g., 5,10)")
+        print("   ▶️  start               - Start/resume robot operation")
+        print("   ⏸️  pause               - Pause robot operation")
+        print("   🛑 shutdown             - Exit system")
+        print("   🔄 order                - Toggle target filling mode")
+        print("   ❓ help                 - Show this help")
+        print("   📊 status               - Show system status")
+        print()
+
+    def show_status(self):
+        """Display current system status"""
+        print(f"\n📊 SYSTEM STATUS:")
+        print(f"   🤖 Robots: {len(self.robots)}")
+        for robot in self.robots:
+            print(f"      Robot {robot.robot_id}: {robot.state.name} at ({robot.location.x:.1f}, {robot.location.y:.1f})")
+        print(f"   🧱 Unplaced bricks: {len(self.unplaced_bricks)}")
+        print(f"   🟪 Placed bricks: {len(self.placed_bricks)}")
+        print(f"   🎯 Targets: {len(self.targets)} ({sum(1 for t in self.targets if t.state == TargetState.PENDING)} pending)")
+        print(f"   ▶️  System state: {'PAUSED' if self.system_paused else 'RUNNING'}")
+        print(f"   🚀 Robots active: {'YES' if self.robots_can_start else 'NO'}")
+        print(f"   🎯 Target mode: {'ORDERED' if self.ordered_target_filling else 'CLOSEST'}")
+        print(f"   ⚙️  Defaults: {self.default_num_robots} robots, {self.default_num_bricks} bricks")
+        print()
+
+    def handle_start(self):
+        """Start or resume robot operation"""
+        self.system_paused = False
+        self.robots_can_start = True
+        print("▶️  System resumed - robots can now work!")
+
+    def handle_pause(self):
+        """Pause robot operation"""
+        self.system_paused = True
+        self.robots_can_start = False
+        print("⏸️  System paused - robots will become idle")
+
+    def handle_shutdown(self):
+        """Shutdown the entire system"""
+        print("🛑 Shutting down system...")
+        self.shutdown_requested = True
+        self.simulation_running = False
+        self.input_thread_active = False
+
+    def handle_order_toggle(self):
+        """Toggle target filling order mode"""
+        self.ordered_target_filling = not self.ordered_target_filling
+        mode = 'ORDERED (first-added first)' if self.ordered_target_filling else 'CLOSEST (distance-based)'
+        print(f"🔄 Target filling mode changed to: {mode}")
+
+    def handle_add_target(self, args):
+        """Add a new target location"""
+        try:
+            if len(args) != 1:
+                print("❌ Usage: add_target x,y,z (e.g., add_target 2.5,3.0,0.0)")
+                return
+                
+            coords = [float(x.strip()) for x in args[0].split(',')]
+            if len(coords) != 3:
+                print("❌ Please provide exactly 3 coordinates (x,y,z)")
+                return
+                
+            x, y, z = coords
+            
+            # Validate coordinates
+            if not (0 <= x <= 5 and 0 <= y <= 5 and 0 <= z <= 5):
+                print("⚠️  Warning: Coordinates outside typical range (0-5). Continuing anyway...")
+            
+            with self.target_lock:
+                target_id = len(self.targets) + 1
+                target_loc = Location(x, y, z)
+                target = Target(target_id=target_id, location=target_loc, state=TargetState.PENDING)
+                self.targets.append(target)
+                self.target_brick_counts[target_id] = 0
+                
+            print(f"✅ Added Target {target_id} at: ({x:.1f}, {y:.1f}, {z:.1f})")
+            
+        except ValueError:
+            print("❌ Invalid coordinates. Use format: x,y,z (e.g., 2.5,3.0,0.0)")
+        except Exception as e:
+            print(f"❌ Error adding target: {e}")
+
+    def handle_add_brick(self, args):
+        """Add a new unplaced brick"""
+        try:
+            if len(args) != 1:
+                print("❌ Usage: add_brick x,y,z (e.g., add_brick 1.5,2.0,0.0)")
+                return
+                
+            coords = [float(x.strip()) for x in args[0].split(',')]
+            if len(coords) != 3:
+                print("❌ Please provide exactly 3 coordinates (x,y,z)")
+                return
+                
+            x, y, z = coords
+            
+            # Validate coordinates
+            if not (0 <= x <= 5 and 0 <= y <= 5 and 0 <= z <= 5):
+                print("⚠️  Warning: Coordinates outside typical range (0-5). Continuing anyway...")
+            
+            brick_id = max([b.brick_id for b in self.unplaced_bricks + self.placed_bricks], default=0) + 1
+            brick_loc = Location(x, y, z)
+            brick = Brick(brick_id=brick_id, location=brick_loc, state=BrickState.UNGRABBED)
+            self.unplaced_bricks.append(brick)
+            
+            print(f"✅ Added Brick {brick_id} at: ({x:.1f}, {y:.1f}, {z:.1f})")
+            
+        except ValueError:
+            print("❌ Invalid coordinates. Use format: x,y,z (e.g., 1.5,2.0,0.0)")
+        except Exception as e:
+            print(f"❌ Error adding brick: {e}")
+
+    def handle_add_robot(self, args):
+        """Add a new robot"""
+        try:
+            if len(args) != 1:
+                print("❌ Usage: add_robot x,y,z (e.g., add_robot 0.5,0.5,0.0)")
+                return
+                
+            coords = [float(x.strip()) for x in args[0].split(',')]
+            if len(coords) != 3:
+                print("❌ Please provide exactly 3 coordinates (x,y,z)")
+                return
+                
+            x, y, z = coords
+            
+            # Validate coordinates
+            if not (0 <= x <= 5 and 0 <= y <= 5 and 0 <= z <= 5):
+                print("⚠️  Warning: Coordinates outside typical range (0-5). Continuing anyway...")
+            
+            robot_id = max([r.robot_id for r in self.robots], default=0) + 1
+            robot_loc = Location(x, y, z)
+            robot = Robot(robot_id=robot_id, location=robot_loc, state=RobotState.IDLE)
+            self.robots.append(robot)
+            
+            # Create path publisher for new robot
+            topic_name = f'/robot_{robot_id}_path'
+            self.path_publishers_[robot_id] = self.create_publisher(Path, topic_name, 10)
+            
+            print(f"✅ Added Robot {robot_id} at: ({x:.1f}, {y:.1f}, {z:.1f})")
+            
+        except ValueError:
+            print("❌ Invalid coordinates. Use format: x,y,z (e.g., 0.5,0.5,0.0)")
+        except Exception as e:
+            print(f"❌ Error adding robot: {e}")
+
+    def handle_remove_target(self, args):
+        """Remove a target by ID"""
+        try:
+            if len(args) != 1:
+                print("❌ Usage: remove_target ID (e.g., remove_target 1)")
+                return
+                
+            target_id = int(args[0])
+            
+            with self.target_lock:
+                target_to_remove = None
+                for target in self.targets:
+                    if target.target_id == target_id:
+                        target_to_remove = target
+                        break
+                
+                if target_to_remove:
+                    self.targets.remove(target_to_remove)
+                    if target_id in self.target_brick_counts:
+                        del self.target_brick_counts[target_id]
+                    print(f"✅ Removed Target {target_id}")
+                else:
+                    print(f"❌ Target {target_id} not found")
+                    
+        except ValueError:
+            print("❌ Invalid ID. Use a number (e.g., remove_target 1)")
+        except Exception as e:
+            print(f"❌ Error removing target: {e}")
+
+    def handle_remove_brick(self, args):
+        """Remove a brick by ID"""
+        try:
+            if len(args) != 1:
+                print("❌ Usage: remove_brick ID (e.g., remove_brick 1)")
+                return
+                
+            brick_id = int(args[0])
+            
+            brick_to_remove = None
+            for brick in self.unplaced_bricks:
+                if brick.brick_id == brick_id:
+                    brick_to_remove = brick
+                    break
+            
+            if brick_to_remove:
+                if brick_to_remove.state == BrickState.RESERVED:
+                    print(f"⚠️  Warning: Brick {brick_id} is reserved by a robot")
+                self.unplaced_bricks.remove(brick_to_remove)
+                print(f"✅ Removed Brick {brick_id}")
+            else:
+                print(f"❌ Unplaced brick {brick_id} not found")
+                
+        except ValueError:
+            print("❌ Invalid ID. Use a number (e.g., remove_brick 1)")
+        except Exception as e:
+            print(f"❌ Error removing brick: {e}")
+
+    def handle_remove_robot(self, args):
+        """Remove a robot by ID"""
+        try:
+            if len(args) != 1:
+                print("❌ Usage: remove_robot ID (e.g., remove_robot 1)")
+                return
+                
+            robot_id = int(args[0])
+            
+            robot_to_remove = None
+            for robot in self.robots:
+                if robot.robot_id == robot_id:
+                    robot_to_remove = robot
+                    break
+            
+            if robot_to_remove:
+                if robot_to_remove.state != RobotState.IDLE:
+                    print(f"⚠️  Warning: Robot {robot_id} is currently {robot_to_remove.state.name}")
+                    
+                self.robots.remove(robot_to_remove)
+                
+                # Remove path publisher
+                if robot_id in self.path_publishers_:
+                    del self.path_publishers_[robot_id]
+                    
+                print(f"✅ Removed Robot {robot_id}")
+            else:
+                print(f"❌ Robot {robot_id} not found")
+                
+        except ValueError:
+            print("❌ Invalid ID. Use a number (e.g., remove_robot 1)")
+        except Exception as e:
+            print(f"❌ Error removing robot: {e}")
+
+    def handle_spawn_robots(self, args):
+        """Spawn N robots at random locations"""
+        try:
+            if len(args) != 1:
+                print("❌ Usage: spawn_robots N (e.g., spawn_robots 5)")
+                return
+                
+            num_robots = int(args[0])
+            if num_robots <= 0:
+                print("❌ Number of robots must be positive")
+                return
+                
+            if num_robots > 50:
+                print("❌ Maximum 50 robots allowed to prevent performance issues")
+                return
+                
+            next_robot_id = max([r.robot_id for r in self.robots], default=0) + 1
+            spawned_count = 0
+            
+            for i in range(num_robots):
+                robot_id = next_robot_id + i
+                robot_loc = self.random_location()
+                robot = Robot(robot_id=robot_id, location=robot_loc, state=RobotState.IDLE)
+                robot.state_start_time = time.time()
+                self.robots.append(robot)
+                
+                # Create path publisher for new robot
+                topic_name = f'/robot_{robot_id}_path'
+                self.path_publishers_[robot_id] = self.create_publisher(Path, topic_name, 10)
+                spawned_count += 1
+                
+            print(f"✅ Spawned {spawned_count} robots (IDs {next_robot_id}-{next_robot_id + num_robots - 1})")
+            
+        except ValueError:
+            print("❌ Invalid number. Use a positive integer (e.g., spawn_robots 5)")
+        except Exception as e:
+            print(f"❌ Error spawning robots: {e}")
+
+    def handle_spawn_bricks(self, args):
+        """Spawn N bricks at random locations"""
+        try:
+            if len(args) != 1:
+                print("❌ Usage: spawn_bricks N (e.g., spawn_bricks 10)")
+                return
+                
+            num_bricks = int(args[0])
+            if num_bricks <= 0:
+                print("❌ Number of bricks must be positive")
+                return
+                
+            if num_bricks > 100:
+                print("❌ Maximum 100 bricks allowed to prevent performance issues")
+                return
+                
+            next_brick_id = max([b.brick_id for b in self.unplaced_bricks + self.placed_bricks], default=0) + 1
+            spawned_count = 0
+            
+            for i in range(num_bricks):
+                brick_id = next_brick_id + i
+                brick_loc = self.random_location()
+                brick = Brick(brick_id=brick_id, location=brick_loc, state=BrickState.UNGRABBED)
+                self.unplaced_bricks.append(brick)
+                spawned_count += 1
+                
+            print(f"✅ Spawned {spawned_count} bricks (IDs {next_brick_id}-{next_brick_id + num_bricks - 1})")
+            
+        except ValueError:
+            print("❌ Invalid number. Use a positive integer (e.g., spawn_bricks 10)")
+        except Exception as e:
+            print(f"❌ Error spawning bricks: {e}")
+
+    def handle_clear_all(self):
+        """Remove all robots, bricks, and targets"""
+        try:
+            # Count entities before clearing
+            num_robots = len(self.robots)
+            num_bricks = len(self.unplaced_bricks) + len(self.placed_bricks)
+            num_targets = len(self.targets)
+            
+            # Clear all entity lists
+            self.robots.clear()
+            self.unplaced_bricks.clear()
+            self.placed_bricks.clear()
+            with self.target_lock:
+                self.targets.clear()
+                self.target_brick_counts.clear()
+            
+            # Clear path publishers
+            self.path_publishers_.clear()
+            
+            # Clear visualization
+            self.clear_all_markers()
+            
+            print(f"✅ Cleared all entities:")
+            print(f"   🤖 {num_robots} robots removed")
+            print(f"   🧱 {num_bricks} bricks removed")
+            print(f"   🎯 {num_targets} targets removed")
+            
+        except Exception as e:
+            print(f"❌ Error clearing entities: {e}")
+
+    def handle_set_defaults(self, args):
+        """Set default number of robots and bricks for reset_simulation"""
+        try:
+            if len(args) != 1:
+                print("❌ Usage: set_defaults N,M (e.g., set_defaults 5,10)")
+                return
+                
+            nums = [int(x.strip()) for x in args[0].split(',')]
+            if len(nums) != 2:
+                print("❌ Please provide exactly 2 numbers: robots,bricks")
+                return
+                
+            num_robots, num_bricks = nums
+            
+            if num_robots <= 0 or num_bricks <= 0:
+                print("❌ Both numbers must be positive")
+                return
+                
+            if num_robots > 50:
+                print("❌ Maximum 50 robots allowed")
+                return
+                
+            if num_bricks > 100:
+                print("❌ Maximum 100 bricks allowed")
+                return
+                
+            self.default_num_robots = num_robots
+            self.default_num_bricks = num_bricks
+            
+            print(f"✅ Set defaults: {num_robots} robots, {num_bricks} bricks")
+            print(f"   These will be used when system restarts or resets")
+            
+        except ValueError:
+            print("❌ Invalid format. Use: N,M (e.g., set_defaults 5,10)")
+        except Exception as e:
+            print(f"❌ Error setting defaults: {e}")
 
     def publish_markers(self):
         """Publish all markers and update FSM"""
@@ -362,8 +853,7 @@ class RobotBrickVisualizer(Node):
         marker_array = MarkerArray()
         
         # Robot markers (different colored cylinders)
-        robot_colors = [(0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0)]  # Blue, Green, Red
-        for i, robot in enumerate(self.robots):
+        for robot in self.robots:
             robot_marker = Marker()
             robot_marker.header.frame_id = 'map'
             robot_marker.header.stamp = self.get_clock().now().to_msg()
@@ -377,7 +867,7 @@ class RobotBrickVisualizer(Node):
             robot_marker.scale.x = 0.4
             robot_marker.scale.y = 0.4
             robot_marker.scale.z = 0.6
-            color = robot_colors[i % len(robot_colors)]
+            color = self.get_robot_color(robot.robot_id)
             robot_marker.color.r = color[0]
             robot_marker.color.g = color[1]
             robot_marker.color.b = color[2]
@@ -475,7 +965,6 @@ class RobotBrickVisualizer(Node):
     def add_path_markers(self, marker_array: MarkerArray):
         """Add robot path visualization as LINE_STRIP markers to the marker array"""
         reserved_paths = self.path_planner.get_reserved_paths()
-        robot_colors = [(0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0)]  # Blue, Green, Red
         
         for robot_id, path_locations in reserved_paths.items():
             if not path_locations or len(path_locations) < 2:
@@ -492,8 +981,7 @@ class RobotBrickVisualizer(Node):
             path_marker.scale.x = 0.05  # Line width
             
             # Set color based on robot ID
-            color_idx = (robot_id - 1) % len(robot_colors)
-            color = robot_colors[color_idx]
+            color = self.get_robot_color(robot_id)
             path_marker.color.r = color[0]
             path_marker.color.g = color[1] 
             path_marker.color.b = color[2]
@@ -603,8 +1091,6 @@ class RobotBrickVisualizer(Node):
 
     def add_reserved_areas(self, marker_array: MarkerArray):
         """Show reserved path cells as colored squares"""
-        robot_colors = [(0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0)]  # Blue, Green, Red
-        
         # Get current reserved paths
         current_time = time.time()
         marker_id = 0
@@ -614,8 +1100,7 @@ class RobotBrickVisualizer(Node):
             if current_time > reserved_path.start_time + reserved_path.duration:
                 continue
                 
-            color_idx = (robot_id - 1) % len(robot_colors)
-            color = robot_colors[color_idx]
+            color = self.get_robot_color(robot_id)
             
             # Create markers for reserved cells
             for grid_x, grid_y in reserved_path.cells:
@@ -645,7 +1130,6 @@ class RobotBrickVisualizer(Node):
 
     def add_trajectory_arrows(self, marker_array: MarkerArray):
         """Add arrows showing movement direction for each robot"""
-        robot_colors = [(0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0)]  # Blue, Green, Red
         
         for robot in self.robots:
             # Only show arrows for robots that are moving
@@ -691,8 +1175,7 @@ class RobotBrickVisualizer(Node):
                 arrow_marker.scale.z = 0.05  # Height
                 
                 # Set color based on robot
-                color_idx = (robot.robot_id - 1) % len(robot_colors)
-                color = robot_colors[color_idx]
+                color = self.get_robot_color(robot.robot_id)
                 arrow_marker.color.r = color[0]
                 arrow_marker.color.g = color[1]
                 arrow_marker.color.b = color[2]
@@ -729,15 +1212,18 @@ class RobotBrickVisualizer(Node):
 
 
 def main(args=None):
-    print("Starting robot_brick_visualizer with integrated data structures...")
+    print("Starting robot_brick_visualizer in persistent mode...")
     rclpy.init(args=args)
     node = RobotBrickVisualizer()
     try:
-        while rclpy.ok() and node.simulation_running:
+        while rclpy.ok() and node.simulation_running and not node.shutdown_requested:
             node.publish_markers()
             rclpy.spin_once(node, timeout_sec=0.1)
     except KeyboardInterrupt:
-        pass
+        print("\n🛑 Keyboard interrupt received. Shutting down...")
+        node.handle_shutdown()
+    
+    print("🛑 System shutdown complete.")
     node.destroy_node()
     rclpy.shutdown()
 
