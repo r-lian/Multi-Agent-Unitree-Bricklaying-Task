@@ -55,7 +55,7 @@ This system provides a **comprehensive high-level scheduler** for coordinating *
 
 ## Getting Started
 
-### 1. Start the Persistent System
+### 1. Start the System
 ```bash
 python3 robot_brick_visualizer.py
 ```
@@ -64,30 +64,32 @@ The system starts in **persistent mode** with default entities (3 robots, 5 bric
 
 ### 2. Terminal Control Interface
 ```
-=== Multi-Robot Bricklaying System (Persistent Mode) ===
-🤖 3 robots initialized
-🧱 5 bricks to place
-🎯 0 target locations
+=== Multi-Robot Bricklaying System ===
+3 robots initialized
+5 bricks to place
+0 target locations
 
-🎮 TERMINAL CONTROL COMMANDS:
-   📍 add_target x,y,z     - Add target location
-   🧱 add_brick x,y,z      - Add unplaced brick
-   🤖 add_robot x,y,z      - Add new robot
-   ❌ remove_target ID     - Remove target by ID
-   ❌ remove_brick ID      - Remove brick by ID
-   ❌ remove_robot ID      - Remove robot by ID
-   🎲 spawn_robots N       - Spawn N robots randomly
-   🎲 spawn_bricks N       - Spawn N bricks randomly
-   🗑️  clear_all           - Remove all entities
-   ⚙️  set_defaults N,M    - Set default robots,bricks
-   ▶️  start               - Start/resume robot operation
-   ⏸️  pause               - Pause robot operation
-   🛑 shutdown             - Exit system
-   🔄 order                - Toggle target filling mode
-   ❓ help                 - Show this help
-   📊 status               - Show system status
+COMMANDS:
+   add_target x,y,z     - Add target location
+   add_brick x,y,z      - Add unplaced brick
+   add_robot x,y,z      - Add new robot
+   remove_target ID     - Remove target by ID
+   remove_brick ID      - Remove brick by ID
+   remove_robot ID      - Remove robot by ID
+   spawn_robots N       - Spawn N robots randomly
+   spawn_bricks N       - Spawn N bricks randomly
+   clear_all           - Remove all entities
+   set_defaults N,M    - Set default robots,bricks
+   start               - Start/resume robot operation
+   pause               - Pause robot operation
+   shutdown             - Exit system
+   order                - Toggle target filling mode
+   help                 - Show this help
+   status               - Show system status
 
-🎮 Command: 
+Target filling mode: ORDERED (first-added first)
+
+Command: 
 ```
 
 ## Command Reference
@@ -96,85 +98,85 @@ The system starts in **persistent mode** with default entities (3 robots, 5 bric
 
 #### **Adding Entities**
 ```bash
-🎮 Command: add_target 2.0,2.0,0.0      # Add specific target location
-🎮 Command: add_brick 1.5,1.5,0.0       # Add specific brick location  
-🎮 Command: add_robot 0.5,0.5,0.0       # Add specific robot location
-🎮 Command: spawn_robots 10             # Add 10 robots at random locations
-🎮 Command: spawn_bricks 20             # Add 20 bricks at random locations
+Command: add_target 2.0,2.0,0.0      # Add specific target location
+Command: add_brick 1.5,1.5,0.0       # Add specific brick location  
+Command: add_robot 0.5,0.5,0.0       # Add specific robot location
+Command: spawn_robots 10             # Add 10 robots at random locations
+Command: spawn_bricks 20             # Add 20 bricks at random locations
 ```
 
 #### **Removing Entities**
 ```bash
-🎮 Command: remove_target 1             # Remove target by ID
-🎮 Command: remove_brick 5              # Remove brick by ID
-🎮 Command: remove_robot 3              # Remove robot by ID
-🎮 Command: clear_all                   # Remove ALL entities
+Command: remove_target 1             # Remove target by ID
+Command: remove_brick 5              # Remove brick by ID
+Command: remove_robot 3              # Remove robot by ID
+Command: clear_all                   # Remove ALL entities
 ```
 
 ### System Control Commands
 
 #### **Operation Control**
 ```bash
-🎮 Command: start                       # Start/resume robot operation
-🎮 Command: pause                       # Pause all robot activity
-🎮 Command: shutdown                    # Exit system gracefully
+Command: start                       # Start/resume robot operation
+Command: pause                       # Pause all robot activity
+Command: shutdown                    # Exit system gracefully
 ```
 
 #### **Configuration**
 ```bash
-🎮 Command: set_defaults 8,15           # Set 8 robots, 15 bricks as defaults
-🎮 Command: order                       # Toggle ORDERED/CLOSEST target mode
+Command: set_defaults 8,15           # Set 8 robots, 15 bricks as defaults
+Command: order                       # Toggle ORDERED/CLOSEST target mode
 ```
 
 #### **Information**
 ```bash
-🎮 Command: status                      # Show detailed system status
-🎮 Command: help                        # Show all available commands
+Command: status                      # Show detailed system status
+Command: help                        # Show all available commands
 ```
 
 ## Usage Scenarios
 
 ### Small Scale Testing (3-5 robots)
 ```bash
-🎮 Command: clear_all                   # Start fresh
-🎮 Command: spawn_robots 3              # Add 3 robots
-🎮 Command: spawn_bricks 5              # Add 5 bricks
-🎮 Command: add_target 2.0,2.0,0.0      # Add target
-🎮 Command: start                       # Begin operation
-🎮 Command: status                      # Monitor progress
+Command: clear_all                   # Start fresh
+Command: spawn_robots 3              # Add 3 robots
+Command: spawn_bricks 5              # Add 5 bricks
+Command: add_target 2.0,2.0,0.0      # Add target
+Command: start                       # Begin operation
+Command: status                      # Monitor progress
 ```
 
 ### Medium Scale Coordination (8-15 robots)
 ```bash
-🎮 Command: set_defaults 10,20          # Set higher defaults
-🎮 Command: clear_all                   # Clear existing
-🎮 Command: spawn_robots 10             # 10-robot swarm
-🎮 Command: spawn_bricks 20             # Plenty of work
-🎮 Command: add_target 1.0,1.0,0.0      # Multiple targets
-🎮 Command: add_target 3.0,3.0,0.0
-🎮 Command: add_target 2.0,4.0,0.0
-🎮 Command: start                       # Watch coordination!
+Command: set_defaults 10,20          # Set higher defaults
+Command: clear_all                   # Clear existing
+Command: spawn_robots 10             # 10-robot swarm
+Command: spawn_bricks 20             # Plenty of work
+Command: add_target 1.0,1.0,0.0      # Multiple targets
+Command: add_target 3.0,3.0,0.0
+Command: add_target 2.0,4.0,0.0
+Command: start                       # Watch coordination
 ```
 
 ### Large Scale Stress Testing (20-50 robots)
 ```bash
-🎮 Command: clear_all
-🎮 Command: spawn_robots 30             # Large robot swarm  
-🎮 Command: spawn_bricks 60             # High brick count
-🎮 Command: add_target 2.5,2.5,0.0      # Central stacking point
-🎮 Command: start                       # Observe emergent behavior
-🎮 Command: status                      # Monitor coordination
+Command: clear_all
+Command: spawn_robots 30             # Large robot swarm  
+Command: spawn_bricks 60             # High brick count
+Command: add_target 2.5,2.5,0.0      # Central stacking point
+Command: start                       # Observe emergent behavior
+Command: status                      # Monitor coordination
 ```
 
 ### Dynamic Scaling During Operation
 ```bash
 # While robots are working:
-🎮 Command: spawn_robots 5              # Add more workers
-🎮 Command: spawn_bricks 10             # Add more work
-🎮 Command: add_target 4.0,1.0,0.0      # Add more targets
-🎮 Command: pause                       # Pause to observe
-🎮 Command: remove_robot 15             # Remove specific robot
-🎮 Command: start                       # Resume operation
+Command: spawn_robots 5              # Add more workers
+Command: spawn_bricks 10             # Add more work
+Command: add_target 4.0,1.0,0.0      # Add more targets
+Command: pause                       # Pause to observe
+Command: remove_robot 15             # Remove specific robot
+Command: start                       # Resume operation
 ```
 
 ### Target Filling Modes
@@ -191,8 +193,8 @@ The system starts in **persistent mode** with default entities (3 robots, 5 bric
 
 **Toggle between modes:**
 ```bash
-🎮 Command: order                       # Switch modes
-🔄 Target filling mode changed to: CLOSEST (distance-based)
+Command: order                       # Switch modes
+Mode: CLOSEST (distance-based)
 ```
 
 ## RViz2 Visualization
@@ -209,32 +211,32 @@ The system starts in **persistent mode** with default entities (3 robots, 5 bric
 
 ### Visualization Elements
 
-#### **Entity Visualization**
-- **🌈 Colored Cylinders**: Robots with unique HSV-generated colors
-- **🟥 Red Cubes**: Unplaced bricks (available for pickup)
-- **🟧 Orange Cubes**: Reserved bricks (robot targeting them)
-- **🟩 Green Cubes**: Target locations (pending placement)
-- **🟪 Purple Cubes**: Placed bricks (auto-stacked vertically)
+#### Entity Visualization
+- **Colored Cylinders**: Robots with unique HSV-generated colors
+- **Red Cubes**: Unplaced bricks (available for pickup)
+- **Orange Cubes**: Reserved bricks (robot targeting them)
+- **Green Cubes**: Target locations (pending placement)
+- **Purple Cubes**: Placed bricks (auto-stacked vertically)
 
-#### **Advanced Visualization**
-- **📍 Robot State Text**: Real-time status above each robot
+#### Advanced Visualization
+- **Robot State Text**: Real-time status above each robot
   - Current FSM state (IDLE, MOVING_TO_BRICK, etc.)
   - Target brick/location IDs
   - Path progress (waypoint X/Y)
   
-- **🛤️ Colored Path Lines**: Planned routes for each robot
+- **Colored Path Lines**: Planned routes for each robot
   - Color-matched to robot for easy tracking
   - Real-time updates as paths change
   
-- **📐 Planning Grid**: Gray overlay showing pathfinding resolution
+- **Planning Grid**: Gray overlay showing pathfinding resolution
   - 0.2m grid spacing visualization
   - Shows discrete movement space
   
-- **🚫 Reserved Areas**: Collision avoidance zones
+- **Reserved Areas**: Collision avoidance zones
   - Colored squares showing reserved path cells
   - Color-matched to reserving robot
   
-- **➡️ Trajectory Arrows**: Movement direction indicators
+- **Trajectory Arrows**: Movement direction indicators
   - Point toward next waypoint
   - Only visible when robots are moving
 
@@ -524,44 +526,44 @@ spatial_index_enabled = True # O(1) collision checking
 ### Unit Testing
 ```bash
 # Test basic functionality
-🎮 Command: clear_all
-🎮 Command: spawn_robots 1
-🎮 Command: spawn_bricks 1  
-🎮 Command: add_target 2.0,2.0,0.0
-🎮 Command: start
+Command: clear_all
+Command: spawn_robots 1
+Command: spawn_bricks 1  
+Command: add_target 2.0,2.0,0.0
+Command: start
 # Verify: Single robot picks up brick and places at target
 ```
 
 ### Coordination Testing  
 ```bash
 # Test multi-robot coordination
-🎮 Command: clear_all
-🎮 Command: spawn_robots 5
-🎮 Command: spawn_bricks 10
-🎮 Command: add_target 2.0,2.0,0.0
-🎮 Command: start
+Command: clear_all
+Command: spawn_robots 5
+Command: spawn_bricks 10
+Command: add_target 2.0,2.0,0.0
+Command: start
 # Verify: No collisions, efficient task distribution
 ```
 
 ### Scaling Testing
 ```bash
 # Test large-scale performance
-🎮 Command: clear_all
-🎮 Command: spawn_robots 30
-🎮 Command: spawn_bricks 60
-🎮 Command: add_target 2.5,2.5,0.0
-🎮 Command: start
+Command: clear_all
+Command: spawn_robots 30
+Command: spawn_bricks 60
+Command: add_target 2.5,2.5,0.0
+Command: start
 # Verify: System remains responsive, coordination works
 ```
 
 ### Stress Testing
 ```bash
 # Test dynamic scaling under load
-🎮 Command: spawn_robots 20
-🎮 Command: spawn_bricks 40
+Command: spawn_robots 20
+Command: spawn_bricks 40
 # While running:
-🎮 Command: spawn_robots 10  # Add more workers
-🎮 Command: spawn_bricks 20  # Add more work
+Command: spawn_robots 10  # Add more workers
+Command: spawn_bricks 20  # Add more work
 # Verify: Smooth integration of new entities
 ```
 
@@ -625,13 +627,13 @@ spatial_index_enabled = True # O(1) collision checking
 
 ### Common Issues
 
-#### **No robots moving after 'start'**
+#### No robots moving after 'start'
 ```bash
-🎮 Command: status                      # Check robot activation status
+Command: status                      # Check robot activation status
 # If "Robots active: NO":
-🎮 Command: start                       # Ensure robots are started
+Command: start                       # Ensure robots are started
 # If no targets:
-🎮 Command: add_target 2.0,2.0,0.0      # Add at least one target
+Command: add_target 2.0,2.0,0.0      # Add at least one target
 ```
 
 #### **RViz2 not showing markers**
@@ -640,15 +642,15 @@ spatial_index_enabled = True # O(1) collision checking
 3. Ensure **all namespaces** are enabled in MarkerArray display
 4. Run: `ros2 topic echo /debug_markers` to verify messages
 
-#### **Performance issues with many robots**
+#### Performance issues with many robots
 ```bash
-🎮 Command: status                      # Check entity counts
+Command: status                      # Check entity counts
 # If too many entities:
-🎮 Command: remove_robot 25             # Remove some robots
+Command: remove_robot 25             # Remove some robots
 # Or restart with lower defaults:
-🎮 Command: set_defaults 10,20
-🎮 Command: clear_all
-🎮 Command: spawn_robots 10
+Command: set_defaults 10,20
+Command: clear_all
+Command: spawn_robots 10
 ```
 
 #### **Path planning failures**
@@ -657,8 +659,8 @@ spatial_index_enabled = True # O(1) collision checking
 - **Automatic solution**: System reduces robot radius and buffers automatically
 - **Manual solution**: Reduce robot density or add more distributed work
 ```bash
-🎮 Command: remove_robot 5              # Reduce density manually
-🎮 Command: spawn_bricks 5              # Add more distributed work
+Command: remove_robot 5              # Reduce density manually
+Command: spawn_bricks 5              # Add more distributed work
 ```
 
 #### **Performance degradation with 30+ robots**
@@ -666,7 +668,7 @@ spatial_index_enabled = True # O(1) collision checking
 - **Automatic**: Spatial indexing provides O(1) collision checking
 - **Manual optimization**: 
 ```bash
-🎮 Command: status                      # Check current parameters
+Command: status                      # Check current parameters
 # System automatically uses:
 # - 6cm robot radius (vs 15cm for small groups)
 # - 0.1s temporal buffers (vs 0.5s for small groups)  
@@ -698,5 +700,5 @@ The system's **modular architecture**, **adaptive algorithms**, and **extensive 
 **Start exploring multi-robot coordination today:**
 ```bash
 python3 robot_brick_visualizer.py
-🎮 Command: help
+Command: help
 ``` 
